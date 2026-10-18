@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from api.routes.health import health_check
+from core.config import settings
 
 
 @pytest.mark.unit
@@ -21,9 +22,11 @@ class TestHealthCheckRedisProbe:
         return db
 
     @pytest.mark.asyncio
-    async def test_redis_probe_builds_client_from_redis_url(self, mock_db):
+    async def test_redis_probe_builds_client_from_redis_url(self, mock_db, monkeypatch):
         """The probe must construct its client from settings.redis_url, not
         the nonexistent settings.redis_host/redis_port fields."""
+        redis_url = "redis://configured-redis:6380/4"
+        monkeypatch.setattr(settings, "redis_url", redis_url)
         with patch("redis.Redis.from_url") as mock_from_url:
             mock_client = Mock()
             mock_client.ping = Mock(return_value=True)
@@ -33,12 +36,7 @@ class TestHealthCheckRedisProbe:
                 # other dependencies may still be unhealthy in this unit test
                 await health_check(db=mock_db)
 
-            mock_from_url.assert_called_once()
-            args, kwargs = mock_from_url.call_args
-            assert (
-                args[0] == "redis://localhost:6379/0"
-                or kwargs.get("url") == "redis://localhost:6379/0"
-            )
+            mock_from_url.assert_called_once_with(redis_url, decode_responses=True)
 
     @pytest.mark.asyncio
     async def test_redis_healthy_when_reachable(self, mock_db):
